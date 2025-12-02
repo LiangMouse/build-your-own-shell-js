@@ -6,11 +6,15 @@ const rl = createInterface({
 });
 function prompt() {
   rl.question("$ ", (answer: string) => {
+    // exit
     if (answer === "exit") {
       rl.close();
       return;
     }
-    console.log(`${answer}: command not found`);
+    // echo
+    if (answer.startsWith("echo")) {
+      console.log(answer.slice(5));
+    } else console.log(`${answer}: command not found`);
     prompt();
   });
 }
