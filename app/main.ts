@@ -16,7 +16,7 @@ function prompt() {
         if (command_list.includes(answer.slice(5))) {
           console.log(`${answer.slice(5)} is a shell builtin`);
         } else {
-          console.log("invalid_command: not found");
+          console.log(`${answer.slice(5)}: not found`);
         }
         break;
       case answer.startsWith("echo"):
