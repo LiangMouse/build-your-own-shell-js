@@ -1,29 +1,74 @@
-import { existsSync } from "fs";
 import { createInterface } from "readline";
+import path from "path";
+import { accessSync, constants } from "fs";
 
+const BUILTIN_COMMANDS = ["echo", "exit", "type"];
+const pathEnv = process.env.PATH;
+const directories = pathEnv!.split(path.delimiter);
 const rl = createInterface({
   input: process.stdin,
   output: process.stdout,
 });
-const command_list = ["echo", "exit", "type"];
+
+function parseInput(line: string): { command: string; args: string[] } {
+  const trimmed = line.trim();
+  if (trimmed === "") {
+    return { command: "", args: [] };
+  }
+  // 按照任意空白字符的正则表达式拆分
+  const parts = trimmed.split(/\s+/);
+  const command = parts[0];
+  const args = parts.slice(1);
+  return { command, args };
+}
+function handleType(args: string[]) {
+  const commandName = args[0];
+
+  if (!commandName) {
+    console.log("type: missing operand");
+    return;
+  }
+
+  // 步骤1: 检查是否是 builtin 命令
+  if (BUILTIN_COMMANDS.includes(commandName)) {
+    console.log(`${commandName} is a shell builtin`);
+    return;
+  }
+
+  // 步骤2: 遍历 PATH 中的每个目录
+  for (const dir of directories) {
+    const fullPath = path.join(dir, commandName);
+
+    try {
+      // 检查文件是否存在且有执行权限
+      accessSync(fullPath, constants.X_OK);
+      // 如果到这里没有抛异常，说明文件存在且有执行权限
+      console.log(`${commandName} is ${fullPath}`);
+      return;
+    } catch (error) {
+      // 文件不存在或没有执行权限，继续下一个目录
+      continue;
+    }
+  }
+
+  // 步骤3: 所有目录都没找到
+  console.log(`${commandName}: not found`);
+}
 function prompt() {
   rl.question("$ ", (answer: string) => {
+    const { command, args } = parseInput(answer);
     switch (true) {
-      case answer === "exit":
+      case command === "exit":
         rl.close();
         return;
-      case answer.startsWith("type"):
-        if (command_list.includes(answer.slice(5))) {
-          console.log(`${answer.slice(5)} is a shell builtin`);
-        } else {
-          console.log(`${answer.slice(5)}: not found`);
-        }
+      case command === "type":
+        handleType(args);
         break;
-      case answer.startsWith("echo"):
-        console.log(answer.slice(5));
+      case command === "echo":
+        console.log(args.join(" "));
         break;
       default:
-        console.log(`${answer}: command not found`);
+        console.log(`${command}: command not found`);
     }
     prompt();
   });
