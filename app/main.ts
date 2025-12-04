@@ -1,6 +1,7 @@
 import { createInterface } from "readline";
 import path from "path";
 import { accessSync, constants } from "fs";
+import { spawnSync } from "child_process";
 
 const BUILTIN_COMMANDS = ["echo", "exit", "type"];
 const pathEnv = process.env.PATH;
@@ -54,6 +55,25 @@ function handleType(args: string[]) {
   // 步骤3: 所有目录都没找到
   console.log(`${commandName}: not found`);
 }
+function handleNotFound(command: string, args: string[]) {
+  const execName = command;
+  for (const dir of directories) {
+    const fullPath = path.join(dir, execName);
+    try {
+      accessSync(fullPath, constants.X_OK);
+      // Execute the program with arguments
+      // In spawnSync, the first argument is the program path, and the second is the args array
+      // The program will receive: argv[0] = program name, argv[1] = first arg, etc.
+      spawnSync(fullPath, args, {
+        stdio: "inherit",
+      });
+      return;
+    } catch {
+      continue;
+    }
+  }
+  console.log(`${command}: command not found`);
+}
 function prompt() {
   rl.question("$ ", (answer: string) => {
     const { command, args } = parseInput(answer);
@@ -68,7 +88,7 @@ function prompt() {
         console.log(args.join(" "));
         break;
       default:
-        console.log(`${command}: command not found`);
+        handleNotFound(command, args);
     }
     prompt();
   });
