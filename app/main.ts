@@ -3,7 +3,7 @@ import path from "path";
 import { accessSync, constants } from "fs";
 import { spawnSync } from "child_process";
 
-const BUILTIN_COMMANDS = ["echo", "exit", "type"];
+const BUILTIN_COMMANDS = ["echo", "exit", "pwd", "type"];
 const pathEnv = process.env.PATH;
 const directories = pathEnv!.split(path.delimiter);
 const rl = createInterface({
