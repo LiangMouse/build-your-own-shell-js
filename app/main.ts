@@ -62,10 +62,9 @@ function handleNotFound(command: string, args: string[]) {
     try {
       accessSync(fullPath, constants.X_OK);
       // Execute the program with arguments
-      // In spawnSync, the first argument is the program path, and the second is the args array
-      // The program will receive: argv[0] = program name, argv[1] = first arg, etc.
       spawnSync(fullPath, args, {
         stdio: "inherit",
+        argv0: command,
       });
       return;
     } catch {
