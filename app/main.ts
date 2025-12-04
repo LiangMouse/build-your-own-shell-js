@@ -80,12 +80,17 @@ function prompt() {
       case command === "exit":
         rl.close();
         return;
-      case command === "type":
-        handleType(args);
-        break;
       case command === "echo":
         console.log(args.join(" "));
         break;
+      // print working directory
+      case command === "pwd":
+        console.log(process.cwd());
+        break;
+      case command === "type":
+        handleType(args);
+        break;
+
       default:
         handleNotFound(command, args);
     }
