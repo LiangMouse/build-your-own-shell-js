@@ -24,12 +24,15 @@ function parseInput(line: string): { command: string; args: string[] } {
 }
 function handleCd(args: string[]) {
   const location = args[0];
+  if (!location) {
+    return;
+  }
   if (location.startsWith("/")) {
     try {
       accessSync(location, constants.F_OK);
       process.chdir(location);
     } catch {
-      console.log(`cd: ${location} No such file or directory`);
+      console.log(`cd: ${location}: No such file or directory`);
     }
   }
 }
@@ -91,6 +94,7 @@ function prompt() {
     switch (true) {
       case command === "cd":
         handleCd(args);
+        break;
       case command === "exit":
         rl.close();
         return;
