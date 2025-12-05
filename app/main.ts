@@ -3,7 +3,7 @@ import path from "path";
 import { accessSync, constants } from "fs";
 import { spawnSync } from "child_process";
 
-const BUILTIN_COMMANDS = ["echo", "exit", "pwd", "type"];
+const BUILTIN_COMMANDS = ["cd", "echo", "exit", "pwd", "type"];
 const pathEnv = process.env.PATH;
 const directories = pathEnv!.split(path.delimiter);
 const rl = createInterface({
@@ -22,6 +22,18 @@ function parseInput(line: string): { command: string; args: string[] } {
   const args = parts.slice(1);
   return { command, args };
 }
+function handleCd(args: string[]) {
+  const location = args[0];
+  if (location.startsWith("/")) {
+    try {
+      accessSync(location, constants.F_OK);
+      process.chdir(location);
+    } catch {
+      console.log(`cd: ${location} No such file or directory`);
+    }
+  }
+}
+
 function handleType(args: string[]) {
   const commandName = args[0];
 
@@ -77,6 +89,8 @@ function prompt() {
   rl.question("$ ", (answer: string) => {
     const { command, args } = parseInput(answer);
     switch (true) {
+      case command === "cd":
+        handleCd(args);
       case command === "exit":
         rl.close();
         return;
