@@ -2,6 +2,7 @@ import { createInterface } from "readline";
 import path from "path";
 import { accessSync, constants } from "fs";
 import { spawnSync } from "child_process";
+import { parse } from "path";
 
 const BUILTIN_COMMANDS = ["cd", "echo", "exit", "pwd", "type"];
 const pathEnv = process.env.PATH;
@@ -12,15 +13,34 @@ const rl = createInterface({
 });
 
 function parseInput(line: string): { command: string; args: string[] } {
-  const trimmed = line.trim();
-  if (trimmed === "") {
-    return { command: "", args: [] };
+  const args: string[] = [];
+  let currentArg = "";
+  let inSingleQuote = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+
+    if (char === "'" && !inSingleQuote) {
+      inSingleQuote = true;
+    } else if (char === "'" && inSingleQuote) {
+      inSingleQuote = false;
+    } else if (char === " " && !inSingleQuote) {
+      if (currentArg.length > 0) {
+        args.push(currentArg);
+        currentArg = "";
+      }
+    } else {
+      currentArg += char;
+    }
   }
-  // 按照任意空白字符的正则表达式拆分
-  const parts = trimmed.split(/\s+/);
-  const command = parts[0];
-  const args = parts.slice(1);
-  return { command, args };
+
+  if (currentArg.length > 0) {
+    args.push(currentArg);
+  }
+
+  const command = args[0] || "";
+  const commandArgs = args.slice(1);
+  return { command, args: commandArgs };
 }
 function handleCd(args: string[]) {
   const location = args[0];
@@ -43,7 +63,9 @@ function handleCd(args: string[]) {
     console.log(`cd: ${location}: No such file or directory`);
   }
 }
-
+function handleEcho(args: string[]) {
+  console.log(args.join(" "));
+}
 function handleType(args: string[]) {
   const commandName = args[0];
 
@@ -96,8 +118,18 @@ function handleNotFound(command: string, args: string[]) {
   console.log(`${command}: command not found`);
 }
 function prompt() {
-  rl.question("$ ", (answer: string) => {
-    const { command, args } = parseInput(answer);
+  rl.question("$ ", (input: string) => {
+    // fixed: `parse(input)` does not always return an array, so avoid using .filter on wrong type.
+    let tokens: string[];
+    try {
+      const result = parse(input);
+      tokens = Array.isArray(result)
+        ? (result.filter((t: any) => typeof t === "string") as string[])
+        : [];
+    } catch {
+      tokens = [];
+    }
+    const { command, args } = parseInput(input);
     switch (true) {
       case command === "cd":
         handleCd(args);
@@ -106,7 +138,7 @@ function prompt() {
         rl.close();
         return;
       case command === "echo":
-        console.log(args.join(" "));
+        handleEcho(args);
         break;
       // print working directory
       case command === "pwd":
