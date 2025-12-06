@@ -119,16 +119,6 @@ function handleNotFound(command: string, args: string[]) {
 }
 function prompt() {
   rl.question("$ ", (input: string) => {
-    // fixed: `parse(input)` does not always return an array, so avoid using .filter on wrong type.
-    let tokens: string[];
-    try {
-      const result = parse(input);
-      tokens = Array.isArray(result)
-        ? (result.filter((t: any) => typeof t === "string") as string[])
-        : [];
-    } catch {
-      tokens = [];
-    }
     const { command, args } = parseInput(input);
     switch (true) {
       case command === "cd":
