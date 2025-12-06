@@ -24,34 +24,23 @@ function parseInput(line: string): { command: string; args: string[] } {
 }
 function handleCd(args: string[]) {
   const location = args[0];
-  const curLocation = process.cwd();
   if (!location) {
     return;
   }
-  if (location.startsWith("/")) {
-    try {
-      accessSync(location, constants.F_OK);
-      process.chdir(location);
-    } catch {
-      console.log(`cd: ${location}: No such file or directory`);
-    }
-  } else if (location.startsWith("./")) {
-    try {
-      const newLocation = path.join(curLocation, location.slice(1));
-      accessSync(newLocation, constants.F_OK);
-      process.chdir(newLocation);
-    } catch {
-      console.log(`cd: ${location}: No such file or directory`);
-    }
-  } else if (location.startsWith("../")) {
-    try {
-      const newPath = curLocation.split("/").slice(0, -1).join("/");
-      const newLocation = path.join(newPath, location.slice(1));
-      accessSync(newLocation, constants.F_OK);
-      process.chdir(newLocation);
-    } catch {
-      console.log(`cd: ${location}: No such file or directory`);
-    }
+
+  let targetPath: string;
+  if (location.startsWith("~")) {
+    const home = process.env.HOME!;
+    targetPath = path.join(home, location.slice(1));
+  } else {
+    targetPath = path.resolve(process.cwd(), location);
+  }
+
+  try {
+    accessSync(targetPath, constants.F_OK);
+    process.chdir(targetPath);
+  } catch {
+    console.log(`cd: ${location}: No such file or directory`);
   }
 }
 
