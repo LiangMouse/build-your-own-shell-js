@@ -17,8 +17,9 @@ function parseInput(line: string): { command: string; args: string[] } {
   let inSingleQuote = false;
   let inDoubleQuote = false;
 
-  // 在双引号内，只有下面这些字符会被反斜杠转义
-  const specialCharactersForSlash = ["\\", "$", '"', "\n", "'", "*", "?"];
+  // 在双引号内，POSIX 语义下只有这些字符会被反斜杠转义: \ $ " 和 换行
+  // 不能包含单引号等，否则会破坏像 "/tmp/pig/f'\\'41" 这类路径
+  const specialCharactersForSlash = ["\\", "$", '"', "\n"];
 
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
