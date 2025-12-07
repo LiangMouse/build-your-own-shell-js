@@ -16,25 +16,63 @@ function parseInput(line: string): { command: string; args: string[] } {
   let currentArg = "";
   let inSingleQuote = false;
   let inDoubleQuote = false;
+
+  // 在双引号内，只有下面这些字符会被反斜杠转义
+  const specialCharactersForSlash = ["\\", "$", '"', "\n", "'", "*", "?"];
+
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
 
-    if (char === '"' && !inDoubleQuote) {
-      inDoubleQuote = true;
-    } else if (char === '"' && inDoubleQuote) {
-      inDoubleQuote = false;
-    } else if (char === "'" && !inSingleQuote && !inDoubleQuote) {
-      inSingleQuote = true;
-    } else if (char === "'" && inSingleQuote) {
-      inSingleQuote = false;
-    } else if (char === " " && !inSingleQuote && !inDoubleQuote) {
+    // 1. 反斜杠处理：优先级最高
+    if (char === "\\") {
+      if (inSingleQuote) {
+        // 单引号内：反斜杠不具特殊含义，当作普通字符
+        currentArg += char;
+      } else if (inDoubleQuote) {
+        // 双引号内：只对少数字符进行转义
+        const nextChar = line[i + 1];
+        if (specialCharactersForSlash.includes(nextChar)) {
+          currentArg += nextChar;
+          i++; // 跳过被转义的字符
+        } else {
+          // 其他情况保留反斜杠本身
+          currentArg += char;
+        }
+      } else {
+        // 不在任何引号中：转义紧随其后的一个字符（包括空格、引号等）
+        if (i + 1 < line.length) {
+          currentArg += line[i + 1];
+          i++;
+        }
+      }
+      continue;
+    }
+
+    // 2. 双引号处理：仅其不在单引号中时才生效
+    if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      // 引号本身不进入参数
+      continue;
+    }
+
+    // 3. 单引号处理：仅在不在双引号中时才生效
+    if (char === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      // 引号本身不进入参数
+      continue;
+    }
+
+    // 4. 空格：仅在未被任何引号包裹时作为分隔符
+    if (char === " " && !inSingleQuote && !inDoubleQuote) {
       if (currentArg.length > 0) {
         args.push(currentArg);
         currentArg = "";
       }
-    } else {
-      currentArg += char;
+      continue;
     }
+
+    // 5. 普通字符：追加到当前参数
+    currentArg += char;
   }
 
   if (currentArg.length > 0) {
