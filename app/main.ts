@@ -27,7 +27,7 @@ function parseInput(line: string): { command: string; args: string[] } {
       inSingleQuote = true;
     } else if (char === "'" && inSingleQuote) {
       inSingleQuote = false;
-    } else if (char === " " && !inSingleQuote) {
+    } else if (char === " " && !inSingleQuote && !inDoubleQuote) {
       if (currentArg.length > 0) {
         args.push(currentArg);
         currentArg = "";
