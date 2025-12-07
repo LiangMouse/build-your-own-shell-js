@@ -2,7 +2,6 @@ import { createInterface } from "readline";
 import path from "path";
 import { accessSync, constants } from "fs";
 import { spawnSync } from "child_process";
-import { parse } from "path";
 
 const BUILTIN_COMMANDS = ["cd", "echo", "exit", "pwd", "type"];
 const pathEnv = process.env.PATH;
@@ -16,11 +15,15 @@ function parseInput(line: string): { command: string; args: string[] } {
   const args: string[] = [];
   let currentArg = "";
   let inSingleQuote = false;
-
+  let inDoubleQuote = false;
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
 
-    if (char === "'" && !inSingleQuote) {
+    if (char === '"' && !inDoubleQuote) {
+      inDoubleQuote = true;
+    } else if (char === '"' && inDoubleQuote) {
+      inDoubleQuote = false;
+    } else if (char === "'" && !inSingleQuote) {
       inSingleQuote = true;
     } else if (char === "'" && inSingleQuote) {
       inSingleQuote = false;
