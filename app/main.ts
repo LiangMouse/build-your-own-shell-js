@@ -15,6 +15,7 @@ interface ParsedInput {
   command: string;
   args: string[];
   redirectTarget?: string;
+  redirectErrorTarget?: string;
 }
 
 // 统一处理「写入 stdout 或重定向到文件」
@@ -101,33 +102,54 @@ function parseInput(line: string): ParsedInput {
   const command = args[0];
   const rawArgs = args.slice(1);
 
-  // 处理输出重定向：支持 `>` 和 `1>`，例如
-  // ls /tmp/baz > /tmp/foo/baz.md
-  // echo hi 1>/tmp/foo/bar.md
+  // 处理输出重定向：支持
+  //   - 标准输出：">", "1>", ">/path", "1>/path"
+  //   - 标准错误："2>", "2>/path"
+  // 例如：
+  //   ls /tmp/baz > /tmp/foo/baz.md
+  //   ls nonexistent 2> /tmp/quz/baz.md
+  //   echo hi 1>/tmp/foo/bar.md
   let redirectTarget: string | undefined;
+  let redirectErrorTarget: string | undefined;
+  const filteredArgs: string[] = [];
+
   for (let i = 0; i < rawArgs.length; i++) {
     const token = rawArgs[i];
 
-    if (token === ">" || token === "1>") {
+    if (token === ">" || token === "1>" || token === "2>") {
       if (i + 1 < rawArgs.length) {
-        redirectTarget = rawArgs[i + 1];
-        rawArgs.splice(i, 2);
+        const target = rawArgs[i + 1];
+        if (token === "2>") {
+          redirectErrorTarget = target;
+        } else {
+          redirectTarget = target;
+        }
+        i += 1; // 跳过目标路径
+        continue;
       }
-      break;
-    }
-
-    if (token.startsWith(">") || token.startsWith("1>")) {
-      const offset = token.startsWith("1>") ? 2 : 1;
+    } else if (
+      token.startsWith("1>") ||
+      token.startsWith("2>") ||
+      token.startsWith(">")
+    ) {
+      const isStdoutWithOne = token.startsWith("1>");
+      const isStderr = token.startsWith("2>");
+      const offset = isStdoutWithOne || isStderr ? 2 : 1;
       const target = token.slice(offset);
       if (target.length > 0) {
-        redirectTarget = target;
-        rawArgs.splice(i, 1);
+        if (isStderr) {
+          redirectErrorTarget = target;
+        } else {
+          redirectTarget = target;
+        }
+        continue;
       }
-      break;
     }
+
+    filteredArgs.push(token);
   }
 
-  return { command, args: rawArgs, redirectTarget };
+  return { command, args: filteredArgs, redirectTarget, redirectErrorTarget };
 }
 
 function handleCd(args: string[]) {
@@ -198,7 +220,8 @@ function handleType(args: string[], redirectTarget?: string) {
 function handleNotFound(
   command: string,
   args: string[],
-  redirectTarget?: string
+  redirectTarget?: string,
+  redirectErrorTarget?: string
 ) {
   const execName = command;
   for (const dir of directories) {
@@ -206,13 +229,29 @@ function handleNotFound(
     try {
       accessSync(fullPath, constants.X_OK);
       // Execute the program with arguments
-      if (redirectTarget) {
+      if (redirectTarget && redirectErrorTarget) {
+        const result = spawnSync(fullPath, args, {
+          stdio: ["inherit", "pipe", "pipe"],
+          argv0: command,
+        });
+        const stdoutData = result.stdout ?? "";
+        const stderrData = result.stderr ?? "";
+        writeFileSync(redirectTarget, stdoutData);
+        writeFileSync(redirectErrorTarget, stderrData);
+      } else if (redirectTarget) {
         const result = spawnSync(fullPath, args, {
           stdio: ["inherit", "pipe", "inherit"],
           argv0: command,
         });
         const stdoutData = result.stdout ?? "";
         writeFileSync(redirectTarget, stdoutData);
+      } else if (redirectErrorTarget) {
+        const result = spawnSync(fullPath, args, {
+          stdio: ["inherit", "inherit", "pipe"],
+          argv0: command,
+        });
+        const stderrData = result.stderr ?? "";
+        writeFileSync(redirectErrorTarget, stderrData);
       } else {
         spawnSync(fullPath, args, {
           stdio: "inherit",
@@ -228,7 +267,17 @@ function handleNotFound(
 }
 function prompt() {
   rl.question("$ ", (input: string) => {
-    const { command, args, redirectTarget } = parseInput(input);
+    const { command, args, redirectTarget, redirectErrorTarget } =
+      parseInput(input);
+
+    // 提前创建/清空重定向目标文件，模拟真实 shell 中的行为
+    if (redirectTarget) {
+      writeFileSync(redirectTarget, "");
+    }
+    if (redirectErrorTarget) {
+      writeFileSync(redirectErrorTarget, "");
+    }
+
     switch (true) {
       case command === "cd":
         handleCd(args);
@@ -250,7 +299,7 @@ function prompt() {
         break;
 
       default:
-        handleNotFound(command, args, redirectTarget);
+        handleNotFound(command, args, redirectTarget, redirectErrorTarget);
     }
     prompt();
   });
