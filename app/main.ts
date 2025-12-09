@@ -1,6 +1,6 @@
 import { createInterface } from "readline";
 import path from "path";
-import { accessSync, constants, writeFileSync } from "fs";
+import { accessSync, constants, writeFileSync, appendFileSync } from "fs";
 import { spawnSync } from "child_process";
 
 const BUILTIN_COMMANDS = ["cd", "echo", "exit", "pwd", "type"];
@@ -16,13 +16,19 @@ interface ParsedInput {
   args: string[];
   redirectTarget?: string;
   redirectErrorTarget?: string;
+  appendStdout?: boolean; // true 表示使用 >>，false 表示使用 >
+  appendStderr?: boolean; // true 表示使用 2>>，false 表示使用 2>
 }
 
 // 统一处理「写入 stdout 或重定向到文件」
-function writeLine(output: string, redirectTarget?: string) {
+function writeLine(output: string, redirectTarget?: string, append?: boolean) {
   const text = output + "\n";
   if (redirectTarget) {
-    writeFileSync(redirectTarget, text);
+    if (append) {
+      appendFileSync(redirectTarget, text);
+    } else {
+      writeFileSync(redirectTarget, text);
+    }
   } else {
     process.stdout.write(text);
   }
@@ -103,28 +109,59 @@ function parseInput(line: string): ParsedInput {
   const rawArgs = args.slice(1);
 
   // 处理输出重定向：支持
-  //   - 标准输出：">", "1>", ">/path", "1>/path"
-  //   - 标准错误："2>", "2>/path"
-  // 例如：
-  //   ls /tmp/baz > /tmp/foo/baz.md
-  //   ls nonexistent 2> /tmp/quz/baz.md
-  //   echo hi 1>/tmp/foo/bar.md
+  //   - 标准输出覆盖：">", "1>", ">/path", "1>/path"
+  //   - 标准输出追加：">>", "1>>", ">>/path", "1>>/path"
+  //   - 标准错误覆盖："2>", "2>/path"
+  //   - 标准错误追加："2>>", "2>>/path"
   let redirectTarget: string | undefined;
   let redirectErrorTarget: string | undefined;
+  let appendStdout = false;
+  let appendStderr = false;
   const filteredArgs: string[] = [];
 
   for (let i = 0; i < rawArgs.length; i++) {
     const token = rawArgs[i];
 
-    if (token === ">" || token === "1>" || token === "2>") {
+    // 检查是否是重定向操作符（覆盖或追加）
+    if (
+      token === ">" ||
+      token === ">>" ||
+      token === "1>" ||
+      token === "1>>" ||
+      token === "2>" ||
+      token === "2>>"
+    ) {
       if (i + 1 < rawArgs.length) {
         const target = rawArgs[i + 1];
-        if (token === "2>") {
+        const isAppend = token.includes(">>");
+        if (token.startsWith("2")) {
           redirectErrorTarget = target;
+          appendStderr = isAppend;
         } else {
           redirectTarget = target;
+          appendStdout = isAppend;
         }
         i += 1; // 跳过目标路径
+        continue;
+      }
+    } else if (
+      token.startsWith("1>>") ||
+      token.startsWith("2>>") ||
+      token.startsWith(">>")
+    ) {
+      // 追加模式：">>/path", "1>>/path", "2>>/path"
+      const isStdoutWithOne = token.startsWith("1>>");
+      const isStderr = token.startsWith("2>>");
+      const offset = isStdoutWithOne || isStderr ? 3 : 2;
+      const target = token.slice(offset);
+      if (target.length > 0) {
+        if (isStderr) {
+          redirectErrorTarget = target;
+          appendStderr = true;
+        } else {
+          redirectTarget = target;
+          appendStdout = true;
+        }
         continue;
       }
     } else if (
@@ -132,6 +169,7 @@ function parseInput(line: string): ParsedInput {
       token.startsWith("2>") ||
       token.startsWith(">")
     ) {
+      // 覆盖模式：">/path", "1>/path", "2>/path"
       const isStdoutWithOne = token.startsWith("1>");
       const isStderr = token.startsWith("2>");
       const offset = isStdoutWithOne || isStderr ? 2 : 1;
@@ -139,8 +177,10 @@ function parseInput(line: string): ParsedInput {
       if (target.length > 0) {
         if (isStderr) {
           redirectErrorTarget = target;
+          appendStderr = false;
         } else {
           redirectTarget = target;
+          appendStdout = false;
         }
         continue;
       }
@@ -149,7 +189,14 @@ function parseInput(line: string): ParsedInput {
     filteredArgs.push(token);
   }
 
-  return { command, args: filteredArgs, redirectTarget, redirectErrorTarget };
+  return {
+    command,
+    args: filteredArgs,
+    redirectTarget,
+    redirectErrorTarget,
+    appendStdout,
+    appendStderr,
+  };
 }
 
 function handleCd(args: string[]) {
@@ -174,24 +221,24 @@ function handleCd(args: string[]) {
   }
 }
 
-function handleEcho(args: string[], redirectTarget?: string) {
+function handleEcho(args: string[], redirectTarget?: string, append?: boolean) {
   const output = args.join(" ");
-  writeLine(output, redirectTarget);
+  writeLine(output, redirectTarget, append);
 }
 
-function handleType(args: string[], redirectTarget?: string) {
+function handleType(args: string[], redirectTarget?: string, append?: boolean) {
   const commandName = args[0];
 
   if (!commandName) {
     const msg = "type: missing operand";
-    writeLine(msg, redirectTarget);
+    writeLine(msg, redirectTarget, append);
     return;
   }
 
   // 步骤1: 检查是否是 builtin 命令
   if (BUILTIN_COMMANDS.includes(commandName)) {
     const msg = `${commandName} is a shell builtin`;
-    writeLine(msg, redirectTarget);
+    writeLine(msg, redirectTarget, append);
     return;
   }
 
@@ -204,7 +251,7 @@ function handleType(args: string[], redirectTarget?: string) {
       accessSync(fullPath, constants.X_OK);
       // 如果到这里没有抛异常，说明文件存在且有执行权限
       const msg = `${commandName} is ${fullPath}`;
-      writeLine(msg, redirectTarget);
+      writeLine(msg, redirectTarget, append);
       return;
     } catch (error) {
       // 文件不存在或没有执行权限，继续下一个目录
@@ -214,14 +261,16 @@ function handleType(args: string[], redirectTarget?: string) {
 
   // 步骤3: 所有目录都没找到
   const msg = `${commandName}: not found`;
-  writeLine(msg, redirectTarget);
+  writeLine(msg, redirectTarget, append);
 }
 
 function handleNotFound(
   command: string,
   args: string[],
   redirectTarget?: string,
-  redirectErrorTarget?: string
+  redirectErrorTarget?: string,
+  appendStdout?: boolean,
+  appendStderr?: boolean
 ) {
   const execName = command;
   for (const dir of directories) {
@@ -236,22 +285,38 @@ function handleNotFound(
         });
         const stdoutData = result.stdout ?? "";
         const stderrData = result.stderr ?? "";
-        writeFileSync(redirectTarget, stdoutData);
-        writeFileSync(redirectErrorTarget, stderrData);
+        if (appendStdout) {
+          appendFileSync(redirectTarget, stdoutData);
+        } else {
+          writeFileSync(redirectTarget, stdoutData);
+        }
+        if (appendStderr) {
+          appendFileSync(redirectErrorTarget, stderrData);
+        } else {
+          writeFileSync(redirectErrorTarget, stderrData);
+        }
       } else if (redirectTarget) {
         const result = spawnSync(fullPath, args, {
           stdio: ["inherit", "pipe", "inherit"],
           argv0: command,
         });
         const stdoutData = result.stdout ?? "";
-        writeFileSync(redirectTarget, stdoutData);
+        if (appendStdout) {
+          appendFileSync(redirectTarget, stdoutData);
+        } else {
+          writeFileSync(redirectTarget, stdoutData);
+        }
       } else if (redirectErrorTarget) {
         const result = spawnSync(fullPath, args, {
           stdio: ["inherit", "inherit", "pipe"],
           argv0: command,
         });
         const stderrData = result.stderr ?? "";
-        writeFileSync(redirectErrorTarget, stderrData);
+        if (appendStderr) {
+          appendFileSync(redirectErrorTarget, stderrData);
+        } else {
+          writeFileSync(redirectErrorTarget, stderrData);
+        }
       } else {
         spawnSync(fullPath, args, {
           stdio: "inherit",
@@ -267,14 +332,21 @@ function handleNotFound(
 }
 function prompt() {
   rl.question("$ ", (input: string) => {
-    const { command, args, redirectTarget, redirectErrorTarget } =
-      parseInput(input);
+    const {
+      command,
+      args,
+      redirectTarget,
+      redirectErrorTarget,
+      appendStdout,
+      appendStderr,
+    } = parseInput(input);
 
     // 提前创建/清空重定向目标文件，模拟真实 shell 中的行为
-    if (redirectTarget) {
+    // 注意：只有在覆盖模式（>）时才清空文件，追加模式（>>）不清空
+    if (redirectTarget && !appendStdout) {
       writeFileSync(redirectTarget, "");
     }
-    if (redirectErrorTarget) {
+    if (redirectErrorTarget && !appendStderr) {
       writeFileSync(redirectErrorTarget, "");
     }
 
@@ -286,20 +358,27 @@ function prompt() {
         rl.close();
         return;
       case command === "echo":
-        handleEcho(args, redirectTarget);
+        handleEcho(args, redirectTarget, appendStdout);
         break;
       // print working directory
       case command === "pwd": {
         const cwd = process.cwd();
-        writeLine(cwd, redirectTarget);
+        writeLine(cwd, redirectTarget, appendStdout);
         break;
       }
       case command === "type":
-        handleType(args, redirectTarget);
+        handleType(args, redirectTarget, appendStdout);
         break;
 
       default:
-        handleNotFound(command, args, redirectTarget, redirectErrorTarget);
+        handleNotFound(
+          command,
+          args,
+          redirectTarget,
+          redirectErrorTarget,
+          appendStdout,
+          appendStderr
+        );
     }
     prompt();
   });
