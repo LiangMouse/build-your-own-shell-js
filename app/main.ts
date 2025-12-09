@@ -4,11 +4,43 @@ import { accessSync, constants, writeFileSync, appendFileSync } from "fs";
 import { spawnSync } from "child_process";
 
 const BUILTIN_COMMANDS = ["cd", "echo", "exit", "pwd", "type"];
+const TAB_COMPLETION_COMMANDS = ["echo", "exit"]; // 支持 Tab 补全的命令
 const pathEnv = process.env.PATH;
 const directories = pathEnv!.split(path.delimiter);
 const rl = createInterface({
   input: process.stdin,
   output: process.stdout,
+  completer: (line: string) => {
+    // 提取当前行的第一个词（命令部分）
+    const trimmedLine = line.trim();
+    const firstSpaceIndex = trimmedLine.indexOf(" ");
+    const commandPart =
+      firstSpaceIndex === -1
+        ? trimmedLine
+        : trimmedLine.slice(0, firstSpaceIndex);
+
+    // 如果没有输入或已经输入完整命令，不补全
+    if (commandPart.length === 0) {
+      return [[], ""];
+    }
+
+    // 检查是否匹配支持补全的命令
+    const matches: string[] = [];
+    for (const cmd of TAB_COMPLETION_COMMANDS) {
+      if (cmd.startsWith(commandPart)) {
+        // 补全后添加空格，方便用户继续输入参数
+        matches.push(cmd + " ");
+      }
+    }
+
+    // 如果只有一个匹配，返回补全结果
+    if (matches.length === 1) {
+      return [matches, commandPart];
+    }
+
+    // 如果有多个匹配或没有匹配，返回空数组
+    return [matches, commandPart];
+  },
 });
 
 interface ParsedInput {
