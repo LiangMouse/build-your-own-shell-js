@@ -1,4 +1,4 @@
-import { createInterface } from "readline";
+import { createInterface, emitKeypressEvents } from "readline";
 import path from "path";
 import { accessSync, constants, writeFileSync, appendFileSync, readdirSync } from "fs";
 import { spawnSync } from "child_process";
@@ -7,6 +7,21 @@ const BUILTIN_COMMANDS = ["cd", "echo", "exit", "pwd", "type"];
 
 const pathEnv = process.env.PATH;
 const directories = pathEnv!.split(path.delimiter);
+
+emitKeypressEvents(process.stdin);
+if (process.stdin.isTTY) {
+  process.stdin.setRawMode(true);
+}
+
+let tabPressCount = 0;
+process.stdin.on("keypress", (str, key) => {
+  if (key && key.name === "tab") {
+    tabPressCount++;
+  } else {
+    tabPressCount = 0;
+  }
+});
+
 const rl = createInterface({
   input: process.stdin,
   output: process.stdout,
@@ -50,22 +65,33 @@ const rl = createInterface({
     }
 
     // 将去重后的候选词转为 matches (加空格)
+    // 注意：matches 用于单个补全时返回
+    // candidates 原始列表用于打印列表
     const sortedCandidates = Array.from(candidates).sort();
-    for (const cmd of sortedCandidates) {
-      matches.push(cmd + " ");
-    }
 
-    if (matches.length === 0) {
+    if (sortedCandidates.length === 0) {
       process.stdout.write("\x07");
+      return [[], commandPart];
     }
 
     // 如果只有一个匹配，返回补全结果
-    if (matches.length === 1) {
-      return [matches, commandPart];
+    if (sortedCandidates.length === 1) {
+      return [[sortedCandidates[0] + " "], commandPart];
     }
 
-    // 如果有多个匹配或没有匹配，返回空数组
-    return [matches, commandPart];
+    // 如果有多个匹配
+    if (sortedCandidates.length > 1) {
+      if (tabPressCount >= 2) {
+        process.stdout.write("\n" + sortedCandidates.join("  ") + "\n");
+        // process.stdout.write("$ " + line); // 手动重绘行不完美，使用 prompt(true)
+        rl.prompt(true);
+      } else {
+        process.stdout.write("\x07");
+      }
+      return [[], commandPart];
+    }
+
+    return [[], commandPart];
   },
 });
 
