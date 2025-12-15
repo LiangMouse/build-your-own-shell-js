@@ -4,7 +4,7 @@ import { accessSync, constants, writeFileSync, appendFileSync } from "fs";
 import { spawnSync } from "child_process";
 
 const BUILTIN_COMMANDS = ["cd", "echo", "exit", "pwd", "type"];
-const TAB_COMPLETION_COMMANDS = ["echo", "exit"]; // 支持 Tab 补全的命令
+
 const pathEnv = process.env.PATH;
 const directories = pathEnv!.split(path.delimiter);
 const rl = createInterface({
@@ -26,11 +26,15 @@ const rl = createInterface({
 
     // 检查是否匹配支持补全的命令
     const matches: string[] = [];
-    for (const cmd of TAB_COMPLETION_COMMANDS) {
+    for (const cmd of BUILTIN_COMMANDS) {
       if (cmd.startsWith(commandPart)) {
         // 补全后添加空格，方便用户继续输入参数
         matches.push(cmd + " ");
       }
+    }
+
+    if (matches.length === 0) {
+      process.stdout.write("\x07");
     }
 
     // 如果只有一个匹配，返回补全结果
