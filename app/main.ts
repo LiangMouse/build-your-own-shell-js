@@ -1,6 +1,6 @@
 import { createInterface } from "readline";
 import path from "path";
-import { accessSync, constants, writeFileSync, appendFileSync } from "fs";
+import { accessSync, constants, writeFileSync, appendFileSync, readdirSync } from "fs";
 import { spawnSync } from "child_process";
 
 const BUILTIN_COMMANDS = ["cd", "echo", "exit", "pwd", "type"];
@@ -26,11 +26,33 @@ const rl = createInterface({
 
     // 检查是否匹配支持补全的命令
     const matches: string[] = [];
+    const candidates = new Set<string>();
+
+    // 1. 内置命令
     for (const cmd of BUILTIN_COMMANDS) {
       if (cmd.startsWith(commandPart)) {
-        // 补全后添加空格，方便用户继续输入参数
-        matches.push(cmd + " ");
+        candidates.add(cmd);
       }
+    }
+
+    // 2. 外部命令 (遍历 PATH)
+    for (const dir of directories) {
+      try {
+        const files = readdirSync(dir);
+        for (const file of files) {
+          if (file.startsWith(commandPart)) {
+            candidates.add(file);
+          }
+        }
+      } catch (err) {
+        // 忽略无法读取的目录
+      }
+    }
+
+    // 将去重后的候选词转为 matches (加空格)
+    const sortedCandidates = Array.from(candidates).sort();
+    for (const cmd of sortedCandidates) {
+      matches.push(cmd + " ");
     }
 
     if (matches.length === 0) {
