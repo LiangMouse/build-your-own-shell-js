@@ -1,6 +1,12 @@
 import { createInterface, emitKeypressEvents } from "readline";
 import path from "path";
-import { accessSync, constants, writeFileSync, appendFileSync, readdirSync } from "fs";
+import {
+  accessSync,
+  constants,
+  writeFileSync,
+  appendFileSync,
+  readdirSync,
+} from "fs";
 import { spawnSync } from "child_process";
 
 const BUILTIN_COMMANDS = ["cd", "echo", "exit", "pwd", "type"];
@@ -22,6 +28,21 @@ process.stdin.on("keypress", (str, key) => {
   }
 });
 
+// 计算最长公共前缀
+function longestCommonPrefix(strings: string[]): string {
+  if (strings.length === 0) return "";
+  if (strings.length === 1) return strings[0];
+
+  let prefix = strings[0];
+  for (let i = 1; i < strings.length; i++) {
+    while (strings[i].indexOf(prefix) !== 0) {
+      prefix = prefix.slice(0, -1);
+      if (prefix === "") return "";
+    }
+  }
+  return prefix;
+}
+
 const rl = createInterface({
   input: process.stdin,
   output: process.stdout,
@@ -40,7 +61,6 @@ const rl = createInterface({
     }
 
     // 检查是否匹配支持补全的命令
-    const matches: string[] = [];
     const candidates = new Set<string>();
 
     // 1. 内置命令
@@ -64,9 +84,6 @@ const rl = createInterface({
       }
     }
 
-    // 将去重后的候选词转为 matches (加空格)
-    // 注意：matches 用于单个补全时返回
-    // candidates 原始列表用于打印列表
     const sortedCandidates = Array.from(candidates).sort();
 
     if (sortedCandidates.length === 0) {
@@ -74,16 +91,23 @@ const rl = createInterface({
       return [[], commandPart];
     }
 
-    // 如果只有一个匹配，返回补全结果
+    // 如果只有一个匹配，返回补全结果（加空格）
     if (sortedCandidates.length === 1) {
       return [[sortedCandidates[0] + " "], commandPart];
     }
 
-    // 如果有多个匹配
+    // 如果有多个匹配，计算最长公共前缀
     if (sortedCandidates.length > 1) {
+      const lcp = longestCommonPrefix(sortedCandidates);
+
+      // 如果 LCP 比当前输入长，补全到 LCP
+      if (lcp.length > commandPart.length) {
+        return [[lcp], commandPart];
+      }
+
+      // 如果已经是 LCP，按两次 TAB 显示所有匹配
       if (tabPressCount >= 2) {
         process.stdout.write("\n" + sortedCandidates.join("  ") + "\n");
-        // process.stdout.write("$ " + line); // 手动重绘行不完美，使用 prompt(true)
         rl.prompt(true);
       } else {
         process.stdout.write("\x07");
